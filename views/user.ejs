@@ -64,7 +64,9 @@
 											<h5 style="font-weight:bold">
 												<i class="dropdown icon"></i>
 												洛谷
-												<a href="<%= 'https://www.luogu.com.cn/user/'+show_user.luogu_account%>"> <%= show_user.luogu_account %> </a>
+												<% for (let account of show_user.luogu_account.split(',')) {%>
+													<a href="<%= 'https://www.luogu.com.cn/user/'+account%>"> <%= account %> </a>
+												<% } %>
 											</h5>
 										</div>
 										<div class="content">
@@ -78,7 +80,9 @@
 											<h5>
 												<i class="dropdown icon"></i>
 												Codeforces
-												<a href="<%= 'https://codeforces.com/profile/'+show_user.codeforces_account%>"> <%= show_user.codeforces_account %> </a>
+												<% for (let account of show_user.luogu_account.split(',')) {%>
+													<a href="<%= 'https://codeforces.com/profile/'+account%>"> <%= account %> </a>
+												<% } %>
 											</h5>
 										</div>
 										<div class="content">
@@ -92,7 +96,9 @@
 											<h5>
 												<i class="dropdown icon"></i>
 												Atcoder
-												<a href="<%= 'https://atcoder.jp/users/'+show_user.atcoder_account%>"> <%= show_user.atcoder_account %> </a>
+												<% for (let account of show_user.luogu_account.split(',')) {%>
+													<a href="<%= 'https://atcoder.jp/users/'+account%>"> <%= account %> </a>
+												<% } %>
 											</h5>
 										</div>
 										<div class="content">
