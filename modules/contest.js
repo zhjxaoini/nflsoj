@@ -535,7 +535,8 @@ app.get('/contest/:id', async (req, res) => {
       isSupervisior: isSupervisior,
       weight: weight,
       username: curUser.username,
-      existContestCollection
+      existContestCollection,
+      tagDefaultDisplay: isSupervisior || existContestCollection === -1 // 赛时有提交
     });
   } catch (e) {
     syzoj.log(e);
@@ -938,22 +939,27 @@ app.get('/contest/:id/submissions', async (req, res) => {
     // if contest is non-public, both system administrators and contest administrators can see it.
     if (!contest.is_public && !await contest.isSupervisior(res.locals.user)) throw new ErrorMessage('比赛未公开，请耐心等待 (´∀ `)');
 
-    if (contest.isEnded()) {
-      res.redirect(syzoj.utils.makeUrl(['submissions'], { contest: contest_id }));
-      return;
-    }
-
+    
     // if ( await checkgp(contest,res.locals.user) ){
-    //     ;
-    // }else{
-    //     throw new ErrorMessage('group not included, cannot enter !');
-    // }
-
+      //     ;
+      // }else{
+        //     throw new ErrorMessage('group not included, cannot enter !');
+        // }
+        
     const displayConfig = getDisplayConfig(contest);
     let problems_id = await contest.getProblems();
     const curUser = res.locals.user;
-
-    let user = req.query.submitter && await User.fromName(req.query.submitter);
+    if (contest.isEnded() || await contest.isSupervisior(curUser)) {
+      const newQuery = {...req.query}; 
+      if (newQuery.problem_id) {
+        newQuery.problem_id = problem_id = problems_id[parseInt(req.query.problem_id) - 1] || 0; 
+      }
+      newQuery.contest = contest_id;
+      res.redirect(syzoj.utils.makeUrl(['submissions'], newQuery));
+      return;
+    }
+        
+        let user = req.query.submitter && await User.fromName(req.query.submitter);
 
     let query = JudgeState.createQueryBuilder();
 
@@ -1041,7 +1047,8 @@ app.get('/contest/:id/submissions', async (req, res) => {
 
     const pushType = displayConfig.showResult ? 'rough' : 'compile';
     res.render(page, {
-      local_is_admin: await res.locals.user.hasPrivilege(syzoj.PrivilegeType.ManageUser),
+      local_is_admin: res.locals.user && res.locals.user.is_admin,
+      local_is_teacher: res.locals.user && await res.locals.user.hasPrivilege(syzoj.PrivilegeType.ManageUser),
       contest: contest,
       items: judge_state.map(x => ({
         info: getSubmissionInfo(x, displayConfig),
@@ -1108,7 +1115,8 @@ app.get('/contest/submission/:id', async (req, res) => {
 
     let page = req.query.no_jump ?  'submission_modal' : 'submission'
     res.render(page, {
-      local_is_admin: await res.locals.user.hasPrivilege(syzoj.PrivilegeType.ManageUser),
+      local_is_admin: res.locals.user && res.locals.user.is_admin,
+      local_is_teacher: res.locals.user && await res.locals.user.hasPrivilege(syzoj.PrivilegeType.ManageUser),
       allow_code_copy: syzoj.config.allow_code_copy || await res.locals.user.hasPrivilege(syzoj.PrivilegeType.ManageUser) || res.locals.user.id === judge.user_id,
       allow_tag_edit: await res.locals.user.hasPrivilege(syzoj.PrivilegeType.ManageUser) || (contest.ended && syzoj.config.allow_tag_edit && judge.user_id === res.locals.user.id && judge.status === 'Accepted'),
       info: getSubmissionInfo(judge, displayConfig),

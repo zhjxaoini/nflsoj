@@ -187,8 +187,9 @@ app.get('/submissions', async (req, res) => {
 
 
     res.render(page, {
-      main_style: res.locals.user.is_admin ? 'width: 1500px;' : undefined,
-      local_is_admin: res.locals.user.is_admin,
+      main_style: res.locals.user && await res.locals.user.hasPrivilege(syzoj.PrivilegeType.ManageUser) ? 'width: 1500px;' : undefined,
+      local_is_admin: res.locals.user && res.locals.user.is_admin,
+      local_is_teacher: res.locals.user && await res.locals.user.hasPrivilege(syzoj.PrivilegeType.ManageUser),
       items: judge_state.map(x => ({
         info: getSubmissionInfo(x, displayConfig),
         token: (x.pending && x.task_id != null) ? jwt.sign({
@@ -272,7 +273,8 @@ app.get('/submission/:id', async (req, res) => {
 
     let page = req.query.no_jump ?  'submission_modal' : 'submission'
     res.render(page, {
-      local_is_admin: res.locals.user.is_admin,
+      local_is_admin: res.locals.user && await res.locals.user.is_admin,
+      local_is_teacher: res.locals.user && await res.locals.user.hasPrivilege(syzoj.PrivilegeType.ManageUser),
       allow_code_copy: syzoj.config.allow_code_copy || await res.locals.user.hasPrivilege(syzoj.PrivilegeType.ManageUser) || res.locals.user.id === judge.user_id,
       allow_tag_edit: res.locals.user.is_admin || (syzoj.config.allow_tag_edit && judge.user_id === res.locals.user.id && judge.status === 'Accepted'),
       info: getSubmissionInfo(judge, displayConfig),
@@ -325,7 +327,7 @@ app.post('/submission/:id/rejudge', async (req, res) => {
 
 app.post('/submission/:id/fake', async (req, res) => {
   try {
-    if (!res.locals.user || !res.locals.user.is_admin) throw new ErrorMessage('您没有权限进行此操作。');
+    if (!res.locals.user || !await res.locals.user.hasPrivilege(syzoj.PrivilegeType.ManageUser)) throw new ErrorMessage('您没有权限进行此操作。');
     let id = parseInt(req.params.id);
     let judge = await JudgeState.findById(id);
 
@@ -344,5 +346,31 @@ app.post('/submission/:id/fake', async (req, res) => {
     res.render('error', {
       err: e
     });
+  }
+});
+
+app.post('/submission/:id/updateIpLocation', async (req, res) => {
+  try {
+    try {
+      if (!res.locals.user || !res.locals.user.is_admin) throw new ErrorMessage('您没有权限进行此操作。');
+      let id = parseInt(req.params.id);
+      let judge = await JudgeState.findById(id);
+      let newIpLocation = req.body.ipLocation;
+      
+      await judge.loadRelationships();
+      judge.ip_location = newIpLocation;
+      await judge.save();
+      res.send({ error_code: 1 });
+    } catch (e) {
+      syzoj.log(e);
+      let err = e;
+      if (!(err instanceof ErrorMessage)) {
+        err = new ErrorMessage(err.toString());
+      }
+      res.send({ error_code: 1001, error_message: err.message });
+    }
+  } catch (e) {
+    syzoj.log(e);
+    res.send({ error_code: 1002, error_message: "未知错误" });
   }
 });

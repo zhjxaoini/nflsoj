@@ -1,3 +1,4 @@
+const fetch = require('node-fetch');
 let Problem = syzoj.model('problem');
 let JudgeState = syzoj.model('judge_state');
 let FormattedCode = syzoj.model('formatted_code');
@@ -70,8 +71,14 @@ app.get('/problems', async (req, res) => {
       problem.judge_state = await problem.getJudgeState(res.locals.user, true);
       problem.tags = await problem.getTags();
     });
-
+    
+    let all_tags = await ProblemTag.find(); 
+    all_tags.sort((a, b) => {
+      return a.color > b.color ? 1 : -1;
+    });
+    
     res.render('problems', {
+      all_tags, 
       allowedManageTag: res.locals.user && await res.locals.user.hasPrivilege('manage_problem_tag'),
       problems: problems,
       paginate: paginate,
@@ -139,7 +146,12 @@ app.get('/problems/search', async (req, res) => {
       problem.tags = await problem.getTags();
     });
 
+    let all_tags = await ProblemTag.find(); 
+    all_tags.sort((a, b) => {
+      return a.color > b.color ? 1 : -1;
+    });
     res.render('problems', {
+      all_tags,
       allowedManageTag: res.locals.user && await res.locals.user.hasPrivilege('manage_problem_tag'),
       problems: problems,
       paginate: paginate,
@@ -210,7 +222,13 @@ app.get('/problems/tag/:tagIDs', async (req, res) => {
       return problem;
     });
 
+    let all_tags = await ProblemTag.find(); 
+    all_tags.sort((a, b) => {
+      return a.color > b.color ? 1 : -1;
+    });
+
     res.render('problems', {
+      all_tags, 
       allowedManageTag: res.locals.user && await res.locals.user.hasPrivilege('manage_problem_tag'),
       problems: problems,
       tags: tags,
@@ -724,6 +742,75 @@ app.post('/problem/:id/hate', async (req, res) => {
   await setEvaluate(req, res, 'Hate');
 });
 
+async function getLocation1(ip) {
+  try {
+    let url = `https://ip.mcr.moe/?ip=${ip}`;
+    let response = await fetch(url);
+    let data = await response.json();
+    if (data.status === 200) {
+      return data.area;
+    } else {
+      syzoj.log("IP 所属地查询失败（1）：" + data.message);
+      return "未知";
+    }
+  } catch (e) {
+    syzoj.log("IP 所属地查询失败（1）：" + e.toString());
+    return "未知";
+  }
+}
+async function getLocation2(ip) {
+  try {
+    let url = `https://ip.mcr.moe/?ip=${ip}&db2`;
+    let response = await fetch(url);
+    let data = await response.json();
+    if (data.status === 200) {
+      return data.area;
+    } else {
+      syzoj.log("IP 所属地查询失败（2）：" + data.message);
+      return "未知";
+    }
+  } catch (e) {
+    syzoj.log("IP 所属地查询失败（2）：" + e.toString());
+    return "未知";
+  }
+}
+async function getLocation3(ip) {
+  try {
+    let url = `https://ip.zxinc.org/api.php?type=json&ip=${ip}`;
+    let response = await fetch(url);
+    let data = await response.json();
+    if (data.code === 0) {
+      return data.data.country;
+    } else {
+      syzoj.log("IP 所属地查询失败（3）");
+      return "未知";
+    }
+  } catch (e) {
+    syzoj.log("IP 所属地查询失败（3）：" + e.toString());
+    return "未知";
+  }
+}
+async function getLocation(ip) {
+  try {
+    if (!syzoj.config.get_ip_location) return null;
+    if (ip === '127.0.0.1') return "本机";
+    const parts = ip.split('.');
+    if (parts[0] === '10' || (parts[0] === '172' && (parts[1] >= 16 && parts[1] <= 31))) return "局域网"
+    if (parts[0] === '192' && parts[1] === '168') {
+      if (parts[2] == '31') return `D401-${parseInt(parts[3]) - 10}`;
+      if (parts[2] == '32') return `D405-${parseInt(parts[3]) - 10}`;
+      if (parts[2] == '33') return `D402-${parseInt(parts[3]) - 10}`;
+      if (parts[2] == '34') return `D406-${parseInt(parts[3]) - 10}`;
+      if (parts[2] == '8') return `D407-${parseInt(parts[3]) - 10}`;
+      return "局域网";
+    }
+    return (await getLocation1(ip) + '|' + await getLocation2(ip) + '|' + await getLocation3(ip)).replace(/\s+/g, '');
+  } catch (e) {
+    syzoj.log("IP 所属地查询失败：" + e.toString());
+    return "未知";
+  }
+}
+
 app.post('/problem/:id/submit', app.multer.fields([{ name: 'answer', maxCount: 1 }]), async (req, res) => {
   try {
     let id = parseInt(req.params.id);
@@ -740,22 +827,21 @@ app.post('/problem/:id/submit', app.multer.fields([{ name: 'answer', maxCount: 1
     if(!syzoj.submissionIntervalCheck(curUser.id))  throw new ErrorMessage('提交过于频繁，请稍后');
     let today = new Date();
     today.setHours(0), today.setMinutes(0), today.setSeconds(0), today.setMilliseconds(0);
-    let last = await LoginLog.findOne({
-        where: {
-          user_id: curUser.id,
-          login_time: TypeORM.MoreThanOrEqual(today)
-        },
-        order: { login_time: "DESC" }
-    });
+    let last = await curUser.getlastlogin();
+    let ip_location;
     if (!last || last.ip !== ip) {
+      ip_location = await getLocation(ip);
       rec = await LoginLog.create({
           user_id : curUser.id,
           login_time : new Date(),
-          ip : ip
+          ip : ip,
+          ip_location
       });
       rec.save();
       curUser.last_login_time = new Date()
       await curUser.save();
+    } else {
+      ip_location = last.ip_location;
     }
 
     let judge_state;
@@ -781,7 +867,8 @@ app.post('/problem/:id/submit', app.multer.fields([{ name: 'answer', maxCount: 1
       if (!file.md5) throw new ErrorMessage('上传答案文件失败。');
       judge_state = await JudgeState.create({
         submit_time: parseInt((new Date()).getTime() / 1000),
-        submit_ip: res.locals.loginIp,
+        submit_ip: ip,
+        ip_location,
         status: 'Unknown',
         task_id: randomstring.generate(10),
         code: file.md5,
@@ -803,7 +890,8 @@ app.post('/problem/:id/submit', app.multer.fields([{ name: 'answer', maxCount: 1
 
       judge_state = await JudgeState.create({
         submit_time: parseInt((new Date()).getTime() / 1000),
-        submit_ip: res.locals.loginIp,
+        submit_ip: ip,
+        ip_location,
         status: 'Unknown',
         task_id: randomstring.generate(10),
         code: code,
@@ -1015,9 +1103,10 @@ app.get('/problem/:id/testdata/download/:filename?', async (req, res) => {
 	
   try {
     if(!res.locals.user){throw new ErrorMessage('请登录后继续。',{'登录': syzoj.utils.makeUrl(['login'])});}
-
-    let key = req.query.key
-    if(!key || syzoj.utils.md5(key) !== "d81df2014e1c31a09dd3849ddf0b6414") throw new ErrorMessage('密码不正确。');
+    if(!res.locals.user || !res.locals.user.is_admin) throw new ErrorMessage('您没有权限进行此操作。');
+    
+    // let key = req.query.key
+    // if(!key || syzoj.utils.md5(key) !== "d81df2014e1c31a09dd3849ddf0b6414") throw new ErrorMessage('密码不正确。');
 
     let id = parseInt(req.params.id);
     let problem = await Problem.findById(id);

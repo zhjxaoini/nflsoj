@@ -104,6 +104,7 @@ app.post('/logout', async (req, res) => {
 // User page
 app.get('/user/:id', async (req, res) => {
   try {
+    if(!res.locals.user){throw new ErrorMessage('请登录后继续。',{'登录': syzoj.utils.makeUrl(['login'])});}
     let id = parseInt(req.params.id);
     let user = await User.findById(id);
     if (!user) throw new ErrorMessage('无此用户。');
@@ -163,7 +164,8 @@ app.get('/user/:id', async (req, res) => {
       }
       iplog[iplog.length - 1].log.push ({
         ip: x.ip,
-        time: x.login_time
+        time: x.login_time,
+        location: x.ip_location || "未记录"
       });
     });
 

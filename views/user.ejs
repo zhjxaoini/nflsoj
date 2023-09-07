@@ -140,7 +140,7 @@
                        <div class="ui bottom attached segment"><%= show_user.username %><% if (show_user.nameplate) { %><%- show_user.nameplate %><% } %></div>
                     </div>
                   </div>
-                  <% if (res.locals.user && (res.locals.user.allowedEdit || res.locals.user.id == show_user.id)) { %>
+                  <% if (show_user.allowedEdit || res.locals.user.id == show_user.id) { %>
                     <div class="row">
                       <div class="column">
                         <h4 class="ui top attached block header">姓名</h4>
@@ -156,7 +156,7 @@
                       </div>
                     </div>
                   <% } %>
-                  <% if (res.locals.user && (res.locals.user.allowedEdit || res.locals.user.id == show_user.id)) { %>
+                  <% if (show_user.allowedEdit || res.locals.user.id == show_user.id) { %>
                     <div class="row">
                       <div class="column">
                         <h4 class="ui top attached block header">个性签名</h4>
@@ -219,6 +219,7 @@
                             <tr>
                               <th>日期</th>
                               <th>IP</th>
+                              <th>所属地</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -226,9 +227,21 @@
                               <tr>
                                 <td><%= row.day %></td>
                                 <td>
+                                  <% const set = new Set(); %>
                                   <% for (let i = 0;i < row.log.length; ++i) { %>
+                                    <% if (set.has(row.log[i].ip)) { continue; } %>
+                                    <% set.add(row.log[i].ip); %>
                                     <% if (i != 0) { %>, <% } %>
                                     <span title="<%= row.log[i].time %>"><%= row.log[i].ip %></span>
+                                  <% } %>
+                                </td>
+                                <td>
+                                  <% set.clear(); %>
+                                  <% for (let i = 0;i < row.log.length; ++i) { %>
+                                    <% if (set.has(row.log[i].location)) { continue; } %>
+                                    <% set.add(row.log[i].location); %>
+                                    <% if (i != 0) { %>, <% } %>
+                                    <span title="<%= row.log[i].time %>"><%= row.log[i].location %></span>
                                   <% } %>
                                 </td>
                               </tr>

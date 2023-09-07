@@ -33,7 +33,7 @@ if (contest) {
     <div class="row">
       <h1 class="ui header" >
         <% if (contest) { %>
-          <%= this.alpha(pid) %>. <%= syzoj.utils.removeTitleTag(problem.title) %>
+          <%= this.alpha(pid) %>. <%= syzoj.utils.removeTitleTag(problem.title) %> 
         <% } else { %>
           #<%= problem.id %>. <%= problem.title %><% if (problem.allowedEdit && !problem.is_public) { %><span class="ui tiny red label">未公开</span><% } %>
         <% } %>
@@ -147,7 +147,12 @@ if (contest) {
       <% if (true) { %>
         <div class="ui buttons right floated">
           <% if (problem.allowedEdit) { %>
-            <a class="small ui yellow button" href="<%= syzoj.utils.makeUrl(['problem', problem.id, 'testdata']) %>">测试数据</a>
+            <% if (contest) { %>
+            <a class="circular ui icon button" href="<%= syzoj.utils.makeUrl(['problem', problem.id]) %>">
+              <i class="icon reply"></i>
+            </a>
+            <% } %>
+            <a class="small ui button" href="<%= syzoj.utils.makeUrl(['problem', problem.id, 'testdata']) %>">测试数据</a>
             <a class="small ui button" href="<%= syzoj.utils.makeUrl(['problem', problem.id, 'edit']) %>">编辑</a>
             <a class="small ui button" href="<%= syzoj.utils.makeUrl(['problem', problem.id, 'manage']) %>">管理</a>
           <% } %>
