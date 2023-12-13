@@ -13,7 +13,6 @@ const interfaces = require('../libs/judger_interfaces')
 
 const jwt = require('jsonwebtoken');
 const { getSubmissionInfo, getRoughResult, processOverallResult } = require('../libs/submissions_process');
-const hide_title_replace = "ABCD"
 
 async function contest_check_open(contest){
     let gid = contest.group_id;
@@ -111,7 +110,6 @@ app.get('/contests', async (req, res) => {
 
     await contests.forEachAsync(async x => {
       x.subtitle = await syzoj.utils.markdown(x.subtitle);
-      if (x.hide_title) x.title = hide_title_replace;
       x.holder = await User.findById(x.holder_id);
     });
 
@@ -175,6 +173,56 @@ app.get('/cp/user/:id', async (req, res) => {
       let c = {
         rank: '--',
         player_num: '--',
+        score: 0, // 总分
+        contest,
+        problem_ids,
+        problems_details: {},
+
+      }
+      let player_id = players_map[contest.id];
+      let player_detail = player_id ? await ContestPlayer.findOne({ id: player_id.id }) : undefined;
+      let ranklist = ranklist_map[contest.ranklist_id];
+      
+      if (player_id) {
+        c.score = player_detail.score;
+        c.rank = 1;
+        for (const id in Object.values(ranklist.ranklist)) {
+          if (ranklist.ranklist.hasOwnProperty(id) && id !== "player_num") {
+            const player = await ContestPlayer.findOne({ id: ranklist.ranklist[id] });
+            if (player && player.score > c.score) {
+              c.rank++;
+            }
+          }
+        }
+      }
+      c.player_num = ranklist.ranklist.player_num;
+      for (let problem_id of problem_ids) {
+        let score_detail = player_detail?.score_details[problem_id];
+        if (score_detail?.accepted) score_detail.score = 100;
+        let problem = await Problem.findById(problem_id);
+        let post_contest_score_detail = await problem.getJudgeState(user,true);
+
+        let problem_detail = {
+          in_contest: {
+            score: score_detail?.score ?? 0,
+            judge_id: score_detail?.judge_id ?? 0,
+          },
+          post_contest: {
+            score: post_contest_score_detail?.score ?? 0,
+            judge_id: post_contest_score_detail?.id ?? 0,
+          }
+        };
+
+        c.problems_details[problem_id] = problem_detail;
+      }
+      data.push(c)
+
+
+      
+      /*
+      let c = {
+        rank: '--',
+        player_num: '--',
         score: 0, // 比赛得分
         total_score: 0, // 总分
         score_after_contest: 0, // 赛后得分
@@ -222,8 +270,10 @@ app.get('/cp/user/:id', async (req, res) => {
         }
       }
       data.push(c)
+      */
     }
 
+    /*
     let not_solved_ids = Object.keys(not_solved)
     if(not_solved_ids.length > 0) {
       let sql = 'select distinct problem_id from judge_state where user_id=' + user.id + ' and problem_id in (' + not_solved_ids.join(",")  + ') and status=\'Accepted\''
@@ -235,7 +285,7 @@ app.get('/cp/user/:id', async (req, res) => {
         })
       })
     }
-
+    */
 
     res.render('user_contests', {
       data,
@@ -304,55 +354,70 @@ app.get('/contest/:id/edit', async (req, res) => {
 
 app.post('/contest/:id/edit', async (req, res) => {
   try {
-
     let contest_id = parseInt(req.params.id);
     let contest = await Contest.findById(contest_id);
     let ranklist = null;
+    let newContest = false;
     if (!contest) {
       // if contest does not exist, only system administrators can create one
       if (!res.locals.user || !await res.locals.user.hasPrivilege(syzoj.PrivilegeType.ManageUser)) throw new ErrorMessage('您没有权限进行此操作。');
-
       contest = await Contest.create();
-
       contest.holder_id = res.locals.user.id;
-
       ranklist = await ContestRanklist.create();
-
-      // Only new contest can be set type
-      if (!['noi', 'ioi', 'acm', 'pc'].includes(req.body.type)) throw new ErrorMessage('无效的赛制。');
-      contest.type = req.body.type;
+      newContest = true;
     } else {
       // if contest exists, both system administrators and contest administrators can edit it.
-      if (!await contest.isSupervisior(res.locals.user)) throw new ErrorMessage('您没有权限进行此操作。');
-      
+      if (!await contest.isSupervisior(res.locals.user)) {
+        throw new ErrorMessage('您没有权限进行此操作。');
+      }
       await contest.loadRelationships();
       ranklist = contest.ranklist;
     }
 
-    try {
-      ranklist.ranking_params = JSON.parse(req.body.ranking_params);
-    } catch (e) {
-      ranklist.ranking_params = {};
+    switch (req.body.requestType) {
+      case 'problems':
+        if (newContest) { 
+          throw new ErrorMessage('不能为新建的创建的比赛设定题目。');
+        }
+        try {
+          ranklist.ranking_params = JSON.parse(req.body.ranking_params);
+        } catch (e) {
+          ranklist.ranking_params = {};
+        }
+        
+        await ranklist.save();
+        contest.ranklist_id = ranklist.id;
+        contest.problems = req.body.problems;
+        break;
+
+      case 'contestDetails':
+        if (!req.body.title.trim()) throw new ErrorMessage('比赛名不能为空。');
+        contest.title = req.body.title;
+        if (!['noi', 'ioi', 'acm', 'pc'].includes(req.body.type)) throw new ErrorMessage('无效的赛制。');
+        contest.type = req.body.type;
+        contest.subtitle = req.body.subtitle;
+        if (!Array.isArray(req.body.admins)) req.body.admins = [req.body.admins];
+        contest.admins = req.body.admins.join('|');
+        contest.information = req.body.information;
+        contest.start_time = syzoj.utils.parseDate(req.body.start_time);
+        contest.end_time = syzoj.utils.parseDate(req.body.end_time);
+        contest.is_public = req.body.is_public === 'on';
+        contest.hide_statistics = req.body.hide_statistics === 'on';
+        contest.hide_username = req.body.hide_username === 'on';
+        contest.hide_title = req.body.hide_title === 'on';
+        contest.allow_test_code = req.body.allow_test_code === 'on';
+        contest.show_nick = req.body.show_nick === 'on';
+
+        contest.max_submissions = parseInt(req.body.max_submissions);
+        contest.group_id = req.body.group_id;
+
+        await ranklist.save();
+        contest.ranklist_id = ranklist.id;
+        break;
+
+      default:
+        throw new ErrorMessage('无效的请求类型。');
     }
-    await ranklist.save();
-    contest.ranklist_id = ranklist.id;
-
-    if (!req.body.title.trim()) throw new ErrorMessage('比赛名不能为空。');
-    contest.title = req.body.title;
-    contest.subtitle = req.body.subtitle;
-    if (!Array.isArray(req.body.problems)) req.body.problems = [req.body.problems];
-    if (!Array.isArray(req.body.admins)) req.body.admins = [req.body.admins];
-    contest.problems = req.body.problems.join('|');
-    contest.admins = req.body.admins.join('|');
-    contest.information = req.body.information;
-    contest.start_time = syzoj.utils.parseDate(req.body.start_time);
-    contest.end_time = syzoj.utils.parseDate(req.body.end_time);
-    contest.is_public = req.body.is_public === 'on';
-    contest.hide_statistics = req.body.hide_statistics === 'on';
-    contest.hide_username = req.body.hide_username === 'on';
-    contest.hide_title = req.body.hide_title === 'on'
-
-    contest.group_id = req.body.group_id;
 
     await contest.save();
 
@@ -425,8 +490,6 @@ app.get('/contest/:id', async (req, res) => {
       for(let p of problems) {
         contest.open_problem |= !p.is_public
       }
-    } else if(contest.hide_title){
-      contest.title = hide_title_replace
     }
 
     problems = problems.map(x => ({ problem: x, status: null, judge_id: null, statistics: null }));
@@ -528,6 +591,12 @@ app.get('/contest/:id', async (req, res) => {
       existContestCollection = cc ? 1 : 0;
     }
 
+    if (!contest.ended && contest.hide_title) {
+      for(let problem of problems){
+        problem.problem.title = '';
+      }
+    }
+
     res.render('contest', {
       contest: contest,
       problems: problems,
@@ -592,6 +661,39 @@ app.get('/contest/:id/repeat', async (req, res) => {
         problems: prob
       };
     });
+
+    let collectorsNotPlayers = await ContestCollection.find({ contest_id: contest.id })
+      .map(async collection => {
+        let user = await User.findById(collection.user_id);
+        // 检查用户是否是比赛选手
+        let isPlayer = await ContestPlayer.findOne({
+          contest_id: contest.id,
+          user_id: user.id
+        });
+        if (isPlayer) return null; // 如果是比赛选手，则不加入列表
+
+        let number = 0;
+        let prob = await problems.mapAsync(async problem => {
+          let buti_judge = await problem.getJudgeState(user, true);
+          if (buti_judge && buti_judge.status == 'Accepted') ++number;
+          return {
+            buti_judge: buti_judge
+          };
+        });
+
+        return {
+          number: number,
+          user: user,
+          problems: prob
+        };
+      });
+
+    // 过滤掉空值（即实际上是比赛选手的用户）
+    collectorsNotPlayers = collectorsNotPlayers.filter(entry => entry != null);
+
+    // 将这些用户的信息加入到 repeatlist 中
+    repeatlist = repeatlist.concat(collectorsNotPlayers);
+
 
     for (let i = 0; i < problems.length; ++i) problems[i].buti_num = 0;
     for (let it of repeatlist) {
@@ -677,6 +779,39 @@ app.get('/contest/:id/repeat/:prefix', async (req, res) => {
         problems: prob
       };
     });
+
+    let collectorsNotPlayers = await ContestCollection.find({ contest_id: contest.id })
+      .map(async collection => {
+        let user = await User.findById(collection.user_id);
+        // 检查用户是否是比赛选手
+        let isPlayer = await ContestPlayer.findOne({
+          contest_id: contest.id,
+          user_id: user.id
+        });
+        if (isPlayer) return null; // 如果是比赛选手，则不加入列表
+
+        let number = 0;
+        let prob = await problems.mapAsync(async problem => {
+          let buti_judge = await problem.getJudgeState(user, true);
+          if (buti_judge && buti_judge.status == 'Accepted') ++number;
+          return {
+            buti_judge: buti_judge
+          };
+        });
+
+        return {
+          number: number,
+          user: user,
+          problems: prob
+        };
+      });
+
+    // 过滤掉空值（即实际上是比赛选手的用户）
+    collectorsNotPlayers = collectorsNotPlayers.filter(entry => entry != null);
+
+    // 将这些用户的信息加入到 repeatlist 中
+    repeatlist = repeatlist.concat(collectorsNotPlayers);
+
 
     repeatlist = repeatlist.filter(item => item.user.nickname.startsWith(req.params.prefix));
 
@@ -918,7 +1053,7 @@ app.get('/contest/:id/ranklist/:prefix', async (req, res) => {
 function getDisplayConfig(contest) {
   return {
     showScore: contest.allowedSeeingScore(),
-    showUsage: false,
+    showUsage: contest.allowedSeeingUsage(),
     showCode: false,
     showResult: contest.allowedSeeingResult(),
     showOthers: contest.allowedSeeingOthers(),
@@ -1198,7 +1333,23 @@ app.get('/contest/:id/problem/:pid', async (req, res) => {
       user_id: res.locals.user.id
     }) === 0;
 
+
+    let submission_count_left = undefined;
+    if (!contest.ended && contest.max_submissions) {
+      const query = JudgeState.createQueryBuilder()
+      .where('user_id = :user_id', { user_id: curUser.id })
+      .andWhere('type = 1')
+      .andWhere('type_info = :contest_id', { contest_id: contest_id })
+      .andWhere('problem_id = :problem_id', { problem_id: problem.id });
+      const submissionCount = await query.getCount();
+      submission_count_left = contest.max_submissions - submissionCount;
+    }
+
+    if (!contest.ended && contest.hide_title) 
+      problem.title = '';
+
     res.render('problem', {
+      submission_count_left,
       collect_if_submit,
       pid: pid,
       contest: contest,
@@ -1307,7 +1458,7 @@ app.get('/contest/:id/ball', async (req, res) => {
     let id = parseInt(req.params.id);
     let contest = await Contest.findById(id);
     if (!contest) throw new ErrorMessage('无此比赛。');
-    if (!await res.locals.user.hasPrivilege(syzoj.PrivilegeType.ManageUser)) throw new ErrorMessage('您没有权限进行此操作。');
+    if (!await contest.isSupervisior(res.locals.user)) throw new ErrorMessage('您没有权限进行此操作。');
 
     let query = JudgeState.createQueryBuilder();
     query.where("type_info = :type_info", { type_info: id })
@@ -1334,7 +1485,7 @@ app.get('/contest/:id/ball', async (req, res) => {
       let s = records[key]
       if(!s.ball) {
         s.user = await User.findById(s.submission.user_id)
-
+        s.time = s.submission.submit_time - contest.start_time;
         for(let i = 0; i < problems.length; ++i) {
           if(problems[i] === s.submission.problem_id) {
             s.problem_id = i
@@ -1351,13 +1502,40 @@ app.get('/contest/:id/ball', async (req, res) => {
         balls.push(s)
       }
     }
-    balls.sort((a, b) => {
-      return a.room_id - b.room_id
-    })
+    // 新增：获取排序参数
+    let sortBy = req.query.sort || 'time'; // 默认按时间排序
+    let order = req.query.order || 'desc'; // 默认升序
+    console.log(order);
 
+    // 定义排序函数
+    const sortFunctions = {
+      'time': (a, b) => (order === 'asc' ? a.time - b.time : b.time - a.time),
+      'problem': (a, b) => (order === 'asc' ? a.problem_id - b.problem_id : b.problem_id - a.problem_id)
+    };
+
+    // 应用排序
+    if (sortFunctions[sortBy] && ['asc', 'desc'].includes(order)) {
+      balls.sort(sortFunctions[sortBy]);
+    } else {
+      throw new ErrorMessage('错误的排序参数。');
+    }
+
+    balls.forEach(item => {
+      let seconds = item.time;
+      let hours = Math.floor(seconds / 3600).toString().padStart(2, '0');
+      let minutes = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
+      let secondsRemaining = (seconds % 60).toString().padStart(2, '0');
+
+      item.time = `${hours}:${minutes}:${secondsRemaining}`;
+    });
+  
+      
+  
     res.render("contest_balls", {
       balls,
-      contest
+      contest,
+      curSort: sortBy,
+      curOrder: order === 'asc'
     })
 
   } catch (e) {
@@ -1376,7 +1554,7 @@ app.post('/contest/:id/ball/:submission_id', async (req, res) => {
     let id = parseInt(req.params.id);
     let contest = await Contest.findById(id);
     if (!contest) throw new ErrorMessage('无此比赛。');
-    if (!await res.locals.user.hasPrivilege(syzoj.PrivilegeType.ManageUser)) throw new ErrorMessage('您没有权限进行此操作。');
+    if (!await contest.isSupervisior(res.locals.user)) throw new ErrorMessage('您没有权限进行此操作。');
 
     let sid = parseInt(req.params.submission_id)
     let judge_state = await JudgeState.findById(sid)

@@ -3,7 +3,7 @@
 if (typeof contest === 'undefined') contest = null;
 if (typeof practice === 'undefined') practice = null;
 if (contest) {
-  this.title = this.alpha(pid) + '. ' + syzoj.utils.removeTitleTag(problem.title) + ' - ' + contest.title + ' - 比赛';
+  this.title = this.alpha(pid) + (problem.title && '. ' + syzoj.utils.removeTitleTag(problem.title)) + ' - ' + contest.title + ' - 比赛';
 } else if (practice) {
   this.title = this.alpha(pid) + '. ' + syzoj.utils.removeTitleTag(problem.title) + ' - ' + practice.title + ' - 练习';
 } else {
@@ -12,7 +12,7 @@ if (contest) {
 %>
 <% include header %>
 <div id="__xx">
-    <% if (res.locals.user.is_admin) {%>
+    <% if (res.locals.user && res.locals.user.is_admin) {%>
         <% include problem_side.ejs %>
     <%}%>
 </div>
@@ -33,7 +33,7 @@ if (contest) {
     <div class="row">
       <h1 class="ui header" >
         <% if (contest) { %>
-          <%= this.alpha(pid) %>. <%= syzoj.utils.removeTitleTag(problem.title) %> 
+          <%= this.alpha(pid) + (problem.title && ". " + syzoj.utils.removeTitleTag(problem.title)) %> 
         <% } else { %>
           #<%= problem.id %>. <%= problem.title %><% if (problem.allowedEdit && !problem.is_public) { %><span class="ui tiny red label">未公开</span><% } %>
         <% } %>
@@ -138,9 +138,9 @@ if (contest) {
           </a>
 
         <% } %>
-        <% if(problem.type !== 'submit-answer' && problem.type !== 'interaction') {%>
+        <% if(problem.type !== 'submit-answer' && problem.type !== 'interaction' && !(typeof contest !== 'undefined' && contest && !contest.ended && !contest.allow_test_code)) {%>
         <% include code_test%>
-        <a class="small ui blue button" href="javascript:;" onclick="show_code_test_modal()">测试</a>
+        <a class="small ui violet button" href="javascript:;" onclick="show_code_test_modal()">测试</a>
         <%}%>
 
       </div>
@@ -425,14 +425,21 @@ if (contest) {
                 </div>
               </div>
               <div class="ui center aligned vertical segment" style="padding-bottom: 0; ">
-                  <button onclick="submit_code()" class="ui labeled icon button"> <i class="ui edit icon"></i>提交</button>
+                <% if (typeof submission_count_left !== 'undefined') { %> <div class="ui labeled button"> <% } %>
+                  <button onclick="submit_code()" class="ui labeled icon button"> <i class="ui edit icon"></i>提交</button> 
+                  <% if (typeof submission_count_left !== 'undefined') { %>
+                    <div class="ui basic left pointing label">
+                      剩余提交次数：<span id="submission-count"><%=submission_count_left%></span>
+                    </div>
+                  <% } %>
+                <% if (typeof submission_count_left !== 'undefined') { %> </div>  <% } %>
               </div>
             <% } %>
           </form>
         </div>
     </div>
     <% } %>
-    <% if (res.locals.user.is_admin && typeof key !== 'undefined' && key) { %>
+    <% if (res.locals.user && res.locals.user.is_admin && typeof key !== 'undefined' && key) { %>
       <div class='mini ui primary button' style='margin-left: 10px' onclick="copyLink()" id="copy_link_button">  复制外部可访问链接 </div>
       <script>
         function copyLink() {
@@ -466,6 +473,18 @@ if (contest) {
   var lastSubmitted = '';
 
   function submit_code() {
+
+    var countElement = document.getElementById('submission-count');
+    if (countElement) {
+      var currentCount = parseInt(countElement.textContent, 10);
+
+      // Decrease count if it is more than 0
+      if (currentCount > 0) {
+        var newCount = currentCount - 1;
+        countElement.textContent = newCount.toString();
+      }
+    }
+
     if (!$('#submit_code input[name=answer]').val().trim() && !editor.getValue().trim()) return false;
     $('#submit_code input[name=language]').val($('#languages-menu .item.active').data('value'));
     lastSubmitted = editor.getValue();

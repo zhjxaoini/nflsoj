@@ -67,9 +67,17 @@ export default class Contest extends Model {
   @TypeORM.Column({ nullable: true, type: "boolean" })
   hide_title: boolean;
 
+  @TypeORM.Column({ nullable: true, type: "boolean" })
+  show_nick: boolean;
+
   @TypeORM.Column({ nullable: true, type: "text" })
   group_id: string;
 
+  @TypeORM.Column({ nullable: true, type: "integer" })
+  max_submissions: number;
+
+  @TypeORM.Column({ default: true })
+  allow_test_code: boolean;
 
   holder?: User;
   ranklist?: ContestRanklist;
@@ -89,6 +97,11 @@ export default class Contest extends Model {
     else return false;
   }
 
+  allowedSeeingUsage() {
+    if (this.type === 'pc') return true;
+    else return false;
+  }
+
   allowedSeeingScore() { // If not, then the user can only see status
     if (this.type === 'ioi' || this.type === 'pc') return true;
     else return false;
@@ -100,7 +113,7 @@ export default class Contest extends Model {
   }
 
   allowedSeeingTestcase() {
-    if (this.type === 'ioi') return true;
+    if (this.type === 'ioi' || this.type === 'pc') return true;
     return false;
   }
 

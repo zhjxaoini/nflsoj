@@ -16,8 +16,11 @@
           <% if (show_user.allowedEdit) { %>
           <div class="ui dimmer transition hidden">
             <div class="content">
-              <div class="center">
+              <div class="center" style="margin-bottom: 10px;">
                 <a class="ui inverted button" href="<%= syzoj.utils.makeUrl(['user', show_user.id, 'edit']) %>"><i class="edit icon"></i>修改资料</a>
+              </div>
+              <div class="center">
+                <a class="ui inverted button" href="<%= syzoj.utils.makeUrl(['cp', 'user', show_user.id]) %>"><i class="eye icon"></i>比赛记录</a>
               </div>
             </div>
           </div>
@@ -403,4 +406,115 @@ $(function () {
   });
 });
 </script>
+
+<% if (res.locals.user.is_admin) {%> 
+<div class="ui modal" id="showNoteModal">
+  <div class="header">查看批注</div>
+  <div id="notesContainer" class="ui feed" style="margin: 20px; max-height: 60vh; overflow: auto;" >
+      <!-- Notes will be inserted here -->
+  </div>
+  <div class="actions">
+    <div class="ui black deny button">关闭</div>
+  </div>
+</div>
+
+<div class="ui modal" id="addNoteModal">
+  <div class="header">添加批注</div>
+  <div class="content">
+    <form class="ui form" id="addNoteForm">
+      <div class="field">
+        <label>批注内容</label>
+        <textarea id="noteContent" class="markdown-edit"></textarea>
+      </div>
+    </form>
+  </div>
+  <div class="actions">
+    <button class="ui black button" type="submit" form="addNoteForm">提交</button>
+    <button class="ui button deny">取消</button>
+  </div>
+</div>
+
+<script>
+  function fetchUserNote() {
+    $('#notesContainer').html('<div class="ui active inverted dimmer"><div class="ui text loader">Loading</div></div>');
+    $.get(`/user/<%=show_user.id%>/note`, function (data) {
+      $('#notesContainer').empty();
+      if (data.length === 0) {
+        $('#notesContainer').html(`
+          <div class="ui placeholder segment" style="margin-top: 0px; ">
+            <div class="ui icon header">
+              <i class="ui file icon" style="margin-bottom: 20px; "></i>
+              暂无批注
+            </div>
+          </div>`
+        );
+      }
+      for (let i = 0; i < data.length; i++) {
+        let note = data[i];
+        let noteItem = `
+              <div class="event" data-note-id="${note.id}">
+                  <div class="label">
+                      <i class="pencil alternate icon"></i>
+                  </div>
+                  <div class="content">
+                      <div class="summary">
+                          Note ${i + 1}
+                          <div class="date">${note.time}</div>
+                          <a class="deleteNote" data-id="${note.id}">删除</a>
+                      </div>
+                      <div class="extra text">
+                          ${note.html}
+                      </div>
+                  </div>
+              </div>
+          `;
+          $('#notesContainer').append(noteItem);
+      }
+    });
+  }
+  $(document).ready(function () {
+    $('#showNote').click(function () {
+      fetchUserNote();
+      $('#showNoteModal').modal('show');
+    });
+    $('#addNote').click(function() {
+      $('#addNoteModal').modal('show');
+    });
+  });
+
+  $('#addNoteForm').on('submit', function (e) {
+    e.preventDefault();
+    let noteContent = $('#noteContent').val();
+    if (noteContent) {
+      $.post('/user/<%=show_user.id%>/note/add', { note: noteContent }, function (data) {
+        $('#noteContent').val('');
+        fetchUserNote();
+
+      });
+      $('#addNoteModal').modal('hide');
+    }
+  });
+  $('#notesContainer').on('click', '.deleteNote', function () {
+      let noteId = $(this).data('id');
+      $.ajax({
+        url: '/user/<%=show_user.id%>/note/delete/' + noteId,
+        success: function (result) {
+          fetchUserNote();
+        }
+      });
+    });
+</script>
+<div class="ui grid">
+  <div class="row">
+    <div class="column" style="width: 100px; position: fixed; top: 60px; right: 0px;">
+      <button class="circular ui small basic red icon button" id="showNote"><i class="icon eye"></i></button>
+      <button class="circular ui small basic blue icon button" id="addNote" style="margin-top: 10px;"><i class="icon pencil"></i></button>
+    </div>
+  </div>
+</div>
+</div>
+<% } %>
+
+
+
 <% include footer %>

@@ -2,11 +2,12 @@ let User = syzoj.model('user');
 let Problem = syzoj.model('problem');
 let Contest = syzoj.model('contest');
 let File = syzoj.model('file');
+let LoginLog = syzoj.model('loginlog');
 const Email = require('../libs/email');
 const jwt = require('jsonwebtoken');
 
 function setLoginCookie(username, password, res) {
-  res.cookie('login', JSON.stringify([username, password]), { maxAge: 30 * 60 * 1000 });
+  res.cookie('login', JSON.stringify([username, password]), { maxAge: syzoj.config.auto_logout_time * 60 * 1000 });
   // res.cookie('login', JSON.stringify([username, password]), { maxAge: 10 * 365 * 24 * 60 * 60 * 1000 });
 }
 
@@ -24,6 +25,22 @@ app.post('/api/login', async (req, res) => {
     else {
       req.session.user_id = user.id;
       setLoginCookie(user.username, user.password, res);
+
+      let last = await user.getlastlogin();
+      let ip = res.locals.loginIp;
+      if (!last || last.ip !== ip) {
+        ip_location = await syzoj.utils.getLocation(ip);
+        rec = await LoginLog.create({
+            user_id : user.id,
+            login_time : new Date(),
+            ip : ip,
+            ip_location
+        });
+        rec.save();
+        user.last_login_time = new Date()
+        await user.save();
+      }
+
       res.send({ error_code: 1 });
     }
   } catch (e) {
